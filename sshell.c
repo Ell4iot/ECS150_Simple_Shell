@@ -113,11 +113,12 @@ int main(void)
 
                 // begin arguments parsing
                 char** ar_total_cmd = parse_strtok("|", &total_cmd, cmd_duplicate, &should_exit);
-                //printf("1st line 120 %s\n",ar_total_cmd[0]);
-                //printf("line 121\n");
+                /*
+                printf("1st line 120 %s\n",ar_total_cmd[0]);
+                printf("line 121\n");
                 for (int i = 0; i < total_cmd; i++) {
                         printf("%s\n", ar_total_cmd[i]);
-                }
+                } */
 
                 if (total_cmd > 4) {
                         stone_free(ar_total_cmd, total_cmd);
@@ -231,9 +232,7 @@ int main(void)
                 for (int i = 0; i < total_cmd; i++) {
                         stone_free(command[i].pass_argument, command[i].argument_amount);
                         stone_free(command[i].redirect_file, command[i].file_amount);
-
                 }
-
                 free(command);
 
         }
@@ -245,13 +244,11 @@ int regular_cmd(char *cmd, char **args)
 {       /* char *cmd is the command,
         *  char **args contains the argument for this command
         *  */
-
         int cmd_return;
         pid_t pid;
         pid = fork();
         if (pid == 0) {
                 /* This is the child */
-
                 cmd_return = execvp(cmd, args);
                 /* If command not found, exit */
                 if (cmd_return != 0) {
@@ -278,7 +275,7 @@ int redirection(struct cmd_info *current_command, bool error_redirection)
         int retval;
         for (int i = 0; i < (*current_command).file_amount; i++) {
                 int fd;
-                fd = open((*current_command).redirect_file[i], O_CREAT|O_WRONLY|O_TRUNC, 0644);
+                fd = open((*current_command).redirect_file[i], O_CREAT|O_WRONLY|O_TRUNC, 00777);
 
                 if (i == (*current_command).file_amount - 1) {
                         retval = fork_redirect(current_command, fd, error_redirection);
