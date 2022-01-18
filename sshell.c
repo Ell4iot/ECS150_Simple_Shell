@@ -470,7 +470,7 @@ void stone_free(char **args, int argument)
 
 void pwd()
 {
-        char *buffer = getcwd(NULL,-1);
+        char *buffer = getcwd(NULL, 0);
         fprintf(stdout, "%s\n",buffer);
 }
 
