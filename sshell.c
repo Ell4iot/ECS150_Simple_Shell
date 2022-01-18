@@ -153,12 +153,12 @@ int main(void)
                                 should_exit = true;
                                 break;
                         }
-                        /* redirect_counter is the number of arguments being splited by > in one commands*/
+                        /* redirect_counter is the number of arguments being splited by > in one commands
 
                         //char *temp_string = malloc((strlen(ar_total_cmd[cmd_counter]) + 2) * sizeof(char));
                         // printf("line 151 %d\n", strlen(temp_string));
 
-                        /*
+
                         snprintf(temp_string, strlen(ar_total_cmd[cmd_counter]) + 2, " %s", ar_total_cmd[cmd_counter]);*/
 
                         //printf("2nd line 152 %s\n",ar_total_cmd[cmd_counter]);
@@ -170,7 +170,7 @@ int main(void)
                                 printf("%s\n", ar_redirect_token[i]);
                         }
 
-                        /*
+
                         free(temp_string);
                         if (should_exit){
                                 stone_free(ar_redirect_token, redirect_counter);
