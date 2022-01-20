@@ -339,7 +339,6 @@ void call_pipeline(struct cmd_info *command, int command_no, bool file_err_redir
                 } else {
                         /* command 2 */
                         if (command_no <= 2) {
-                                fprintf(stdout, "im ine line 335\n");
                                 // parent children
                                 /* no need for write access */
                                 close(fd_23[1]);
@@ -803,7 +802,7 @@ void stone_free(char **args, int argument)
 }
 int sls_built_in(void)
 {
-
+        /*
         DIR *dr;
         struct dirent *ep;
         //struct stat sb;
@@ -819,7 +818,22 @@ int sls_built_in(void)
                 call_error(ERR_CANT_OPEN_DIR);
                 return 1;
 
+        } */
+        DIR *dirp;
+        struct dirent *dp;
+        dirp = opendir(getcwd(NULL, 0));
+        if(!dirp){
+                printf("Error: cannot open directory\n");
         }
+        while ((dp = readdir(dirp)) != NULL){
+                printf("%s ", dp->d_name);
+                struct stat sb;
+                stat(dp->d_name, &sb);
+                printf("(%lld bytes)\n",(long long) sb.st_size);
+        }
+        closedir(dirp);
+        return 0;
+
 
 }
 
