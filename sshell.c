@@ -6,6 +6,9 @@
 #include <stdbool.h>
 #include <sys/file.h>
 #include <signal.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <signal.h>
 
 #define ARGUMENT_MAX 16
 #define CMD_MAX 4
@@ -21,7 +24,9 @@ enum {
     ERR_CANT_OPEN_FILE,
     ERR_TOO_MANY_FILES,
     ERR_TOO_MANY_CMD,
-    ERR_MIS_LOCATED_OUT
+    ERR_MIS_LOCATED_OUT,
+    ERR_CANT_OPEN_DIR,
+    DO_NOTHING
 };
 
 struct cmd_info{
@@ -35,18 +40,19 @@ struct cmd_info{
 
 struct cmd_info *command;
 
-char **parse_strtok(char *parse_char, int *argument, char *cmd, bool *should_exit);
 void call_error(int error_case);
+void call_pipeline(struct cmd_info *command, int command_no, bool file_err_redirect, bool file_out_redirect);
 void complete_message(char *raw_cmd, int total_command_no);
 bool construct_cmd(struct cmd_info *command, int cmd_counter, int redirect_counter, char **ar_redirect_token, bool *should_exit);
 bool error_management(char *cmd);
-void pwd();
-void pipeline_cmd(struct cmd_info *command, int total_command_no, char *raw_cmd);
-void call_pipeline(struct cmd_info *command, int command_no);
+int fork_redirect(struct cmd_info *current_command, int fd, bool error_redirection);
+char **parse_strtok(char *parse_char, int *argument, char *cmd, bool *should_exit);
+void pipeline_cmd(struct cmd_info *command, int total_command_no, char *raw_cmd, bool file_err_redirect, bool file_out_redirect);
 int redirection(struct cmd_info *current_command, bool error_redirection, bool *should_exit);
 int regular_cmd(char *cmd, char **args);
 void stone_free(char **args, int argument);
-int fork_redirect(struct cmd_info *current_command, int fd, bool error_redirection);
+int sls_built_in(void);
+
 
 
 
@@ -101,7 +107,8 @@ int main(void)
                                 cmd, 0);
                         break;
                 } else if (!strcmp(cmd_no_space, "pwd")) {
-                        pwd();
+                        char *buffer = getcwd(NULL, 0);
+                        fprintf(stdout, "%s\n",buffer);
                         fprintf(stderr, "+ completed '%s' [%d]\n",
                                 cmd, 0);
                         continue;
@@ -114,7 +121,13 @@ int main(void)
                                         cmd, 0);
                         }
                         continue;
+                } else if (!strcmp(cmd_no_space, "sls")) {
+                        retval = sls_built_in();
+                        fprintf(stderr, "+ completed '%s' [%d]\n",
+                                cmd, retval);
+                        continue;
                 }
+
                 strcpy(cmd_duplicate, cmd);
 
                 //printf("line 112 %s\n", cmd_duplicate);
@@ -237,8 +250,15 @@ int main(void)
                                                 command[0].raw_command, retval);
                                 }
 
-                        } else
-                                pipeline_cmd(command, total_cmd, cmd);
+                        } else{
+                                if (command[total_cmd - 1].file_amount != 0) {
+                                        pipeline_cmd(command, total_cmd, cmd, error_redirection, true);
+                                } else{
+                                        pipeline_cmd(command, total_cmd, cmd, false, false);
+                                }
+
+                        }
+
 
                 }
                 // free memory inside command[cmd]
@@ -252,24 +272,19 @@ int main(void)
 
         return EXIT_SUCCESS;
 }
-void pipeline_cmd(struct cmd_info *command, int total_command_no, char* raw_cmd) {       /* char *cmd is the command,
+void pipeline_cmd(struct cmd_info *command, int total_command_no, char* raw_cmd, bool file_err_redirect, bool file_out_redirect) {       /* char *cmd is the command,
         *  char **args contains the argument for this command
         *  */
         pid_t pid;
         pid = fork();
 
         if (pid == 0) {
-                call_pipeline(command, total_command_no);
+                call_pipeline(command, total_command_no, file_err_redirect, file_out_redirect);
 
         } else if (pid > 0) {
                 /* This is the parent */
-                int status;
                 sleep(1);
-                waitpid(pid, &status, 0);
                 complete_message(raw_cmd, total_command_no);
-
-
-                // printf("1st exit is: %d. 2nd exit is: %d. 3rd exit is %d\n", command[0].exit_value, command[1].exit_value, command[2].exit_value);
 
         } else {
                 perror("fork");
@@ -277,28 +292,27 @@ void pipeline_cmd(struct cmd_info *command, int total_command_no, char* raw_cmd)
         }
 }
 
-void call_pipeline(struct cmd_info *command, int command_no) {
+void call_pipeline(struct cmd_info *command, int command_no, bool file_err_redirect, bool file_out_redirect) {
         int fd_23[2];
         pipe(fd_23);
 
-        /*
-        char* argv[] = {"echo", "Hello", "world", NULL};
-
-        char* argvtwo[] = {"grep", "Hello", NULL};
-        char* argvthree[] = {"wc", "-l", NULL};
-                */
-
-
         /* The whole structure is:
+         * pid_1
          * if (fork() != 0):
+         *      pid_2
          *      if (fork() != 0):
+         *              parent
          *              command 1
          *      else:
+         *              child
          *              command 2
          * else:
+         *      pid_3
          *      if (fork() != 0):
+         *              parent
          *              command 3
          *      else:
+         *              child
          *              command 4
          *
          * if no command is provided for command 3 or 4, they will do nothing
@@ -321,10 +335,11 @@ void call_pipeline(struct cmd_info *command, int command_no) {
                         dup2(fd_12[1], STDOUT_FILENO);
                         close(fd_12[1]);
                         command[0].exit_value = execvp(command[0].pass_argument[0], command[0].pass_argument);
+
                 } else {
                         /* command 2 */
                         if (command_no <= 2) {
-                                // fprintf(stdout, "im ine line 110\n");
+                                fprintf(stdout, "im ine line 335\n");
                                 // parent children
                                 /* no need for write access */
                                 close(fd_23[1]);
@@ -335,7 +350,37 @@ void call_pipeline(struct cmd_info *command, int command_no) {
                                 dup2(fd_12[0], STDIN_FILENO);
                                 close(fd_12[0]);
 
-                                command[1].exit_value = execvp(command[1].pass_argument[0], command[1].pass_argument);
+
+                                if (file_out_redirect) {
+                                        int retval = 0;
+                                        for (int i = 0; i < command[1].file_amount; i++) {
+                                                int fd;
+                                                fd = open(command[1].redirect_file[i], O_CREAT|O_WRONLY|O_TRUNC, 00777);
+                                                if (fd == -1) {
+                                                        call_error(ERR_CANT_OPEN_FILE);
+                                                        exit(1);
+                                                }
+
+                                                if (i == command[1].file_amount - 1) {
+                                                        dup2(fd, STDOUT_FILENO);
+                                                        if (file_err_redirect) {
+                                                                dup2(fd, STDERR_FILENO);
+                                                        }
+                                                        close(fd);
+
+                                                        retval = execvp(command[1].pass_argument[0], command[1].pass_argument);
+                                                        if (retval != 0) {
+                                                                call_error(ERR_MISSING_CMD);
+                                                                exit(1);
+                                                        }
+                                                } else
+                                                        close(fd);
+                                        }
+
+                                } else {
+                                        command[1].exit_value = execvp(command[1].pass_argument[0], command[1].pass_argument);
+                                }
+
                         } else {
                                 // fprintf(stdout, "im ine line 124\n");
                                 close(fd_23[0]);
@@ -349,10 +394,9 @@ void call_pipeline(struct cmd_info *command, int command_no) {
 
                                 // execute command 2
                                 command[1].exit_value = execvp(command[1].pass_argument[0], command[1].pass_argument);
+                                exit(0);
 
                         }
-
-
                 }
 
         } else {
@@ -374,10 +418,10 @@ void call_pipeline(struct cmd_info *command, int command_no) {
                                         close(fd_34[1]);
 
                                         command[2].exit_value = execvp(command[2].pass_argument[0], command[2].pass_argument);
+                                        exit(0);
                                 } else {
                                         close(fd_23[1]);
                                         /* total command_no = 3 */
-
                                         /* close pipe of 34 */
                                         close(fd_34[1]);
                                         close(fd_34[0]);
@@ -387,8 +431,38 @@ void call_pipeline(struct cmd_info *command, int command_no) {
                                         close(fd_23[0]);
 
                                         /* execute command 3 */
+                                        if (file_out_redirect) {
+                                                /*command[2].exit_value = pipe_file_redirect(command[2],file_err_redirect);
+                                                exit(1); */
+                                                int retval = 0;
+                                                for (int i = 0; i < command[2].file_amount; i++) {
+                                                        int fd;
+                                                        fd = open(command[2].redirect_file[i], O_CREAT|O_WRONLY|O_TRUNC, 00777);
+                                                        if (fd == -1) {
+                                                                call_error(ERR_CANT_OPEN_FILE);
+                                                                exit(1);
+                                                        }
 
-                                        command[2].exit_value = execvp(command[2].pass_argument[0], command[2].pass_argument);
+                                                        if (i == command[2].file_amount - 1) {
+                                                                dup2(fd, STDOUT_FILENO);
+                                                                if (file_err_redirect) {
+                                                                        dup2(fd, STDERR_FILENO);
+                                                                }
+                                                                close(fd);
+
+                                                                retval = execvp(command[2].pass_argument[0], command[2].pass_argument);
+                                                                if (retval != 0) {
+                                                                        call_error(ERR_MISSING_CMD);
+                                                                        exit(1);
+                                                                }
+                                                        } else
+                                                                close(fd);
+                                                }
+
+                                        } else {
+                                                command[2].exit_value = execvp(command[2].pass_argument[0], command[2].pass_argument);
+                                        }
+
                                 }
 
                         } else {
@@ -397,8 +471,9 @@ void call_pipeline(struct cmd_info *command, int command_no) {
                                 close(fd_23[1]);
                                 close(fd_34[0]);
                                 close(fd_34[1]);
-                                exit(1);
+                                exit(0);
                         }
+
 
                 } else {
                         /* command 4 */
@@ -414,8 +489,56 @@ void call_pipeline(struct cmd_info *command, int command_no) {
                                 close(fd_34[0]);
 
                                 /* execute command 3 */
+                                if (file_out_redirect) {
+                                        int retval = 0;
+                                        for (int i = 0; i < command[3].file_amount; i++) {
+                                                int fd;
+                                                fd = open(command[3].redirect_file[i], O_CREAT|O_WRONLY|O_TRUNC, 00777);
+                                                if (fd == -1) {
+                                                        call_error(ERR_CANT_OPEN_FILE);
+                                                        exit(1);
+                                                }
 
-                                command[3].exit_value = execvp(command[3].pass_argument[0], command[3].pass_argument);
+                                                if (i == command[2].file_amount - 1) {
+                                                        dup2(fd, STDOUT_FILENO);
+                                                        if (file_err_redirect) {
+                                                                dup2(fd, STDERR_FILENO);
+                                                        }
+                                                        close(fd);
+
+                                                        retval = execvp(command[3].pass_argument[0], command[3].pass_argument);
+                                                        if (retval != 0) {
+                                                                call_error(ERR_MISSING_CMD);
+                                                        }       exit(1);
+                                                } else
+                                                        close(fd);
+                                        }
+                                } else {
+                                        command[3].exit_value = execvp(command[3].pass_argument[0], command[3].pass_argument);
+                                }
+
+
+
+
+                                /*
+                                pid_t pid;
+                                pid = fork();
+
+                                if (pid == 0) {
+                                        command[3].exit_value = execvp(command[3].pass_argument[0], command[3].pass_argument);
+
+                                } else if (pid > 0) {
+                                         This is the parent
+                                        int status;
+                                        waitpid(pid, &status, 0);
+                                        kill(-1, SIGCONT);
+                                        exit(0);
+
+                                } else {
+                                        perror("fork");
+                                        exit(1);
+                                } */
+
                         } else {
                                 close(fd_23[1]);
                                 close(fd_23[0]);
@@ -423,6 +546,7 @@ void call_pipeline(struct cmd_info *command, int command_no) {
                                 close(fd_34[0]);
                                 exit(0);
                         }
+
 
                 }
         }
@@ -480,7 +604,7 @@ int redirection(struct cmd_info *current_command, bool error_redirection, bool *
         return retval;
 }
 
-int fork_redirect(struct cmd_info *current_command, int fd, bool error_redirection)
+int fork_redirect(struct cmd_info *current_command, int fd, bool file_err_redirect)
 {
         int cmd_return;
         pid_t pid;
@@ -489,7 +613,7 @@ int fork_redirect(struct cmd_info *current_command, int fd, bool error_redirecti
                 /* This is the child */
 
                 dup2(fd, STDOUT_FILENO);
-                if (error_redirection) {
+                if (file_err_redirect) {
                         dup2(fd, STDERR_FILENO);
                 }
                 close(fd);
@@ -587,6 +711,9 @@ void call_error(int error_case)
                 case ERR_CANT_OPEN_FILE:
                         fprintf(stderr,"Error: cannot open output file\n");
                         break;
+                case ERR_CANT_OPEN_DIR:
+                        fprintf(stderr,"Error: cannot open directory\n");
+                        break;
         }
 }
 
@@ -674,11 +801,26 @@ void stone_free(char **args, int argument)
         }
         free(args);
 }
-
-void pwd()
+int sls_built_in(void)
 {
-        char *buffer = getcwd(NULL, 0);
-        fprintf(stdout, "%s\n",buffer);
+
+        DIR *dr;
+        struct dirent *ep;
+        //struct stat sb;
+
+        dr = opendir("./");
+        if ( dr != NULL) {
+                while ((ep = readdir(dr)) != NULL)
+                        //stat(ep->d_name, &sb);
+                        printf("%s (%lld bytes)\n", ep->d_name, (long long) ep->d_reclen);
+                closedir(dr);
+                return 0;
+        } else {
+                call_error(ERR_CANT_OPEN_DIR);
+                return 1;
+
+        }
+
 }
 
 bool error_management(char *cmd)
