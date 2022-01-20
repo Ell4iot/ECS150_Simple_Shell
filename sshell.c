@@ -5,6 +5,7 @@
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <sys/file.h>
+#include <signal.h>
 
 #define ARGUMENT_MAX 16
 #define CMD_MAX 4
@@ -17,7 +18,9 @@ enum {
     ERR_MISSING_CMD,
     ERR_NO_OUTPUT_FILE,
     ERR_CANT_CD_DIRECTORY,
+    ERR_CANT_OPEN_FILE,
     ERR_TOO_MANY_FILES,
+    ERR_TOO_MANY_CMD,
     ERR_MIS_LOCATED_OUT
 };
 
@@ -34,11 +37,13 @@ struct cmd_info *command;
 
 char **parse_strtok(char *parse_char, int *argument, char *cmd, bool *should_exit);
 void call_error(int error_case);
-void complete_message(char *cmd, int retval);
+void complete_message(char *raw_cmd, int total_command_no);
 bool construct_cmd(struct cmd_info *command, int cmd_counter, int redirect_counter, char **ar_redirect_token, bool *should_exit);
 bool error_management(char *cmd);
 void pwd();
-int redirection(struct cmd_info *current_command, bool error_redirection);
+void pipeline_cmd(struct cmd_info *command, int total_command_no, char *raw_cmd);
+void call_pipeline(struct cmd_info *command, int command_no);
+int redirection(struct cmd_info *current_command, bool error_redirection, bool *should_exit);
 int regular_cmd(char *cmd, char **args);
 void stone_free(char **args, int argument);
 int fork_redirect(struct cmd_info *current_command, int fd, bool error_redirection);
@@ -92,18 +97,21 @@ int main(void)
                 /* Builtin command for exit and pwd */
                 if (!strcmp(cmd_no_space, "exit")) {
                         fprintf(stderr, "Bye...\n");
-                        complete_message(cmd, 0);
+                        fprintf(stderr, "+ completed '%s' [%d]\n",
+                                cmd, 0);
                         break;
                 } else if (!strcmp(cmd_no_space, "pwd")) {
                         pwd();
-                        complete_message(cmd,0);
+                        fprintf(stderr, "+ completed '%s' [%d]\n",
+                                cmd, 0);
                         continue;
                 } else if (!strcmp(cmd_no_space, "cd")) {
                         cmd_no_space = strtok(NULL, " ");
                         if (chdir(cmd_no_space) == -1) {
                                 call_error(ERR_CANT_CD_DIRECTORY);
                         } else {
-                                complete_message(cmd,0);
+                                fprintf(stderr, "+ completed '%s' [%d]\n",
+                                        cmd, 0);
                         }
                         continue;
                 }
@@ -216,16 +224,21 @@ int main(void)
                                 printf("\n");
                         } */
 
-
-                         for (int i = 0; i < total_cmd; i++) {
-                                if (command[i].file_amount) {
-                                        retval = redirection(&command[i], error_redirection);
+                        if (total_cmd == 1) {
+                                if (command[0].file_amount) {
+                                        retval = redirection(&command[0], error_redirection, &should_exit);
+                                        if (!should_exit) {
+                                                fprintf(stderr, "+ completed '%s' [%d]\n",
+                                                        command[0].raw_command, retval);
+                                        }
                                 } else {
-                                        retval = regular_cmd(command[i].pass_argument[0], command[i].pass_argument);
+                                        retval = regular_cmd(command[0].pass_argument[0], command[0].pass_argument);
+                                        fprintf(stderr, "+ completed '%s' [%d]\n",
+                                                command[0].raw_command, retval);
                                 }
 
-                                complete_message(command[i].raw_command, retval);
-                        }
+                        } else
+                                pipeline_cmd(command, total_cmd, cmd);
 
                 }
                 // free memory inside command[cmd]
@@ -238,6 +251,181 @@ int main(void)
         }
 
         return EXIT_SUCCESS;
+}
+void pipeline_cmd(struct cmd_info *command, int total_command_no, char* raw_cmd) {       /* char *cmd is the command,
+        *  char **args contains the argument for this command
+        *  */
+        pid_t pid;
+        pid = fork();
+
+        if (pid == 0) {
+                call_pipeline(command, total_command_no);
+
+        } else if (pid > 0) {
+                /* This is the parent */
+                int status;
+                sleep(1);
+                waitpid(pid, &status, 0);
+                complete_message(raw_cmd, total_command_no);
+
+
+                // printf("1st exit is: %d. 2nd exit is: %d. 3rd exit is %d\n", command[0].exit_value, command[1].exit_value, command[2].exit_value);
+
+        } else {
+                perror("fork");
+                exit(1);
+        }
+}
+
+void call_pipeline(struct cmd_info *command, int command_no) {
+        int fd_23[2];
+        pipe(fd_23);
+
+        /*
+        char* argv[] = {"echo", "Hello", "world", NULL};
+
+        char* argvtwo[] = {"grep", "Hello", NULL};
+        char* argvthree[] = {"wc", "-l", NULL};
+                */
+
+
+        /* The whole structure is:
+         * if (fork() != 0):
+         *      if (fork() != 0):
+         *              command 1
+         *      else:
+         *              command 2
+         * else:
+         *      if (fork() != 0):
+         *              command 3
+         *      else:
+         *              command 4
+         *
+         * if no command is provided for command 3 or 4, they will do nothing
+         * */
+
+        if (fork() != 0) {
+                int fd_12[2];
+                pipe(fd_12);
+
+                // parent
+                if (fork() != 0) {
+                        /* command 1 */
+                        close(fd_23[1]);
+                        close(fd_23[0]);
+
+                        /* no need for read access */
+                        close(fd_12[0]);
+
+                        /* write to command 2 */
+                        dup2(fd_12[1], STDOUT_FILENO);
+                        close(fd_12[1]);
+                        command[0].exit_value = execvp(command[0].pass_argument[0], command[0].pass_argument);
+                } else {
+                        /* command 2 */
+                        if (command_no <= 2) {
+                                // fprintf(stdout, "im ine line 110\n");
+                                // parent children
+                                /* no need for write access */
+                                close(fd_23[1]);
+                                close(fd_23[0]);
+
+                                close(fd_12[1]);
+                                /* read from command 1 */
+                                dup2(fd_12[0], STDIN_FILENO);
+                                close(fd_12[0]);
+
+                                command[1].exit_value = execvp(command[1].pass_argument[0], command[1].pass_argument);
+                        } else {
+                                // fprintf(stdout, "im ine line 124\n");
+                                close(fd_23[0]);
+                                close(fd_12[1]);
+
+                                dup2(fd_12[0], STDIN_FILENO);
+                                close(fd_12[0]);
+
+                                dup2(fd_23[1], STDOUT_FILENO);      // write to command 3
+                                close(fd_23[1]);
+
+                                // execute command 2
+                                command[1].exit_value = execvp(command[1].pass_argument[0], command[1].pass_argument);
+
+                        }
+
+
+                }
+
+        } else {
+                int fd_34[2];
+                pipe(fd_34);
+                if (fork() != 0) {
+                        /* command 3 */
+                        if (command_no >= 3) {
+                                if (command_no == 4) {
+                                        close(fd_23[1]);
+                                        close(fd_34[0]);
+
+                                        /* read from command 2 */
+                                        dup2(fd_23[0], STDIN_FILENO);
+                                        close(fd_23[0]);
+
+                                        /* write to command 4 */
+                                        dup2(fd_34[1], STDOUT_FILENO);
+                                        close(fd_34[1]);
+
+                                        command[2].exit_value = execvp(command[2].pass_argument[0], command[2].pass_argument);
+                                } else {
+                                        close(fd_23[1]);
+                                        /* total command_no = 3 */
+
+                                        /* close pipe of 34 */
+                                        close(fd_34[1]);
+                                        close(fd_34[0]);
+
+                                        /* read from command 2 */
+                                        dup2(fd_23[0], STDIN_FILENO);
+                                        close(fd_23[0]);
+
+                                        /* execute command 3 */
+
+                                        command[2].exit_value = execvp(command[2].pass_argument[0], command[2].pass_argument);
+                                }
+
+                        } else {
+                                /* number of command is smaller than 3 */
+                                close(fd_23[0]);
+                                close(fd_23[1]);
+                                close(fd_34[0]);
+                                close(fd_34[1]);
+                                exit(1);
+                        }
+
+                } else {
+                        /* command 4 */
+                        if (command_no == 4) {
+                                close(fd_23[1]);
+                                close(fd_23[0]);
+
+                                /* no need for write access */
+                                close(fd_34[1]);
+
+                                /* read from command 3 */
+                                dup2(fd_34[0], STDIN_FILENO);
+                                close(fd_34[0]);
+
+                                /* execute command 3 */
+
+                                command[3].exit_value = execvp(command[3].pass_argument[0], command[3].pass_argument);
+                        } else {
+                                close(fd_23[1]);
+                                close(fd_23[0]);
+                                close(fd_34[1]);
+                                close(fd_34[0]);
+                                exit(0);
+                        }
+
+                }
+        }
 }
 
 int regular_cmd(char *cmd, char **args)
@@ -270,12 +458,17 @@ int regular_cmd(char *cmd, char **args)
         return 0;
 }
 
-int redirection(struct cmd_info *current_command, bool error_redirection)
+int redirection(struct cmd_info *current_command, bool error_redirection, bool *should_exit)
 {
         int retval;
         for (int i = 0; i < (*current_command).file_amount; i++) {
                 int fd;
                 fd = open((*current_command).redirect_file[i], O_CREAT|O_WRONLY|O_TRUNC, 00777);
+                if (fd == -1) {
+                        call_error(ERR_CANT_OPEN_FILE);
+                        *should_exit = true;
+                        break;
+                }
 
                 if (i == (*current_command).file_amount - 1) {
                         retval = fork_redirect(current_command, fd, error_redirection);
@@ -323,10 +516,19 @@ int fork_redirect(struct cmd_info *current_command, int fd, bool error_redirecti
         return 0;
 }
 
-void complete_message(char *cmd, int retval)
+void complete_message(char *raw_cmd, int total_command_no)
 {
-        fprintf(stderr, "+ completed '%s' [%d]\n",
-                cmd, retval);
+        int len = 15 + strlen(raw_cmd) + total_command_no * 3;
+        char *cmd = (char*)malloc((len + 1) * sizeof(char));
+        snprintf(cmd, 16 + strlen(raw_cmd), "+ completed '%s' ", raw_cmd);
+
+        for (int i = 0; i < total_command_no; i++) {
+                char temp[4];
+                snprintf(temp, 4, "[%d]", command[i].exit_value);
+                strcat(cmd, temp);
+        }
+        printf("%s\n", cmd);
+        free(cmd);
 }
 
 char **parse_strtok(char *parse_char, int *argument, char *cmd, bool *should_exit)
@@ -378,6 +580,12 @@ void call_error(int error_case)
                         break;
                 case ERR_MIS_LOCATED_OUT:
                         fprintf(stderr,"Error: mislocated output redirection\n");
+                        break;
+                case ERR_TOO_MANY_CMD:
+                        fprintf(stderr,"Error: too many pipe commands\n");
+                        break;
+                case ERR_CANT_OPEN_FILE:
+                        fprintf(stderr,"Error: cannot open output file\n");
                         break;
         }
 }
@@ -458,6 +666,7 @@ bool construct_cmd(struct cmd_info *command, int cmd_counter, int redirect_count
 
         return error_redirection;
 }
+
 void stone_free(char **args, int argument)
 {
         for (int i = 0; i < argument; i++) {
@@ -466,15 +675,11 @@ void stone_free(char **args, int argument)
         free(args);
 }
 
-
-
 void pwd()
 {
         char *buffer = getcwd(NULL, 0);
         fprintf(stdout, "%s\n",buffer);
 }
-
-
 
 bool error_management(char *cmd)
 {
