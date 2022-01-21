@@ -1,12 +1,14 @@
 # ECS 150 P1: Simple Shell
 
+Yuhang Wang,  Shuyao Li
+
 ## Summary
 
 This program  `simple shell` accepts input from the user under the form of command lines and exectues them. 
 
 ### Group work
 
-This assignment is done my me(Yuhang Wang) and my partner(Shuyao Li). We followed the suggested work phase to implement the shell. I did the parts from phase 0 to phase 4, and my partner did phase 6 (extra features) and the phase 3 (built-in commands). My partner has tried to implement pipe using recursion, and we finally use my version of pipe. (phase 5)
+This assignment is done my me(Yuhang Wang) and my partner(Shuyao Li). We followed the suggested work phase to implement the shell. I did the parts from phase 0 to phase 5, and my partner did phase 6 (extra features), code style checking and the phase 3 (built-in commands). My partner has tried to implement pipe using recursion, and we finally use my version of pipe. (phase 5)
 
 ## Implementation
 
@@ -120,6 +122,8 @@ if (fork() != 0){
 
 }
 ```
+
+
 
 and I create another fork outside this function
 
