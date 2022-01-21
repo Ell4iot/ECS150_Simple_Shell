@@ -35,6 +35,7 @@ struct cmd_info{
     char** redirect_file;
     int file_amount;
     int exit_value;
+    bool pipe_ste;
 };
 
 struct cmd_info *command;
@@ -157,6 +158,14 @@ int main(void)
                                 (char**) malloc(ARGUMENT_MAX * sizeof(char*));
                         command[cmd_counter].argument_amount = 0;
                         command[cmd_counter].file_amount = 0;
+                        if (cmd_counter > 0) {
+                                if (ar_total_cmd[cmd_counter][0] == '&') {
+                                        command[cmd_counter].pipe_ste = true;
+                                        ar_total_cmd[cmd_counter][0] = ' ';
+                                } else {
+                                        command[cmd_counter].pipe_ste = false;
+                                }
+                        }
                         strcpy(command[cmd_counter].raw_command, ar_total_cmd[cmd_counter]);
 
                         /*
@@ -204,8 +213,6 @@ int main(void)
                 stone_free(ar_total_cmd, total_cmd);
 
                 if (!should_exit) {
-
-
                         if (total_cmd == 1) {
                                 /* single command */
                                 if (command[0].file_amount) {
@@ -319,6 +326,9 @@ call_pipeline(struct cmd_info *command, int command_no, bool file_err_redirect,
 
                         /* write to command 2 */
                         dup2(fd_12[1], STDOUT_FILENO);
+                        if (command[1].pipe_ste) {
+                                dup2(fd_12[1], STDERR_FILENO);
+                        }
                         close(fd_12[1]);
                         command[0].exit_value = execvp(
                                 command[0].pass_argument[0],
@@ -386,14 +396,19 @@ call_pipeline(struct cmd_info *command, int command_no, bool file_err_redirect,
                                 }
 
                         } else {
-                                // fprintf(stdout, "im ine line 124\n");
+                                /* command 3 exist, need to open pipe between
+                                 * command 2 and 3
+                                 * */
                                 close(fd_23[0]);
                                 close(fd_12[1]);
 
                                 dup2(fd_12[0], STDIN_FILENO);
                                 close(fd_12[0]);
 
-                                dup2(fd_23[1], STDOUT_FILENO);      // write to command 3
+                                dup2(fd_23[1], STDOUT_FILENO);
+                                if (command[2].pipe_ste) {
+                                        dup2(fd_23[1], STDERR_FILENO);
+                                }
                                 close(fd_23[1]);
 
                                 // execute command 2
@@ -420,6 +435,9 @@ call_pipeline(struct cmd_info *command, int command_no, bool file_err_redirect,
 
                                         /* write to command 4 */
                                         dup2(fd_34[1], STDOUT_FILENO);
+                                        if (command[3].pipe_ste) {
+                                                dup2(fd_34[1], STDERR_FILENO);
+                                        }
                                         close(fd_34[1]);
 
                                         command[2].exit_value = execvp(command[2].pass_argument[0],
