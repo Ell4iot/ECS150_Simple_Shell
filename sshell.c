@@ -787,6 +787,9 @@ int sls_built_in(void)
                 return 1;
         }
         while ((dp = readdir(dirp)) != NULL){
+                if((!strcmp(dp->d_name, "."))||(!strcmp(dp->d_name, ".."))){
+                        continue;
+                }
                 printf("%s ", dp->d_name);
                 struct stat sb;
                 stat(dp->d_name, &sb);
