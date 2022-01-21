@@ -5,7 +5,6 @@
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <sys/file.h>
-#include <signal.h>
 #include <sys/stat.h>
 #include <dirent.h>
 
@@ -25,7 +24,7 @@ enum {
     ERR_TOO_MANY_CMD,
     ERR_MIS_LOCATED_OUT,
     ERR_CANT_OPEN_DIR,
-    DO_NOTHING
+    DO_NOTHING,
 };
 
 struct cmd_info{
@@ -37,8 +36,9 @@ struct cmd_info{
     int exit_value;
     bool pipe_ste;
 };
-
 struct cmd_info *command;
+
+
 
 void call_error(int error_case);
 void call_pipeline(struct cmd_info *command, int command_no,
@@ -59,8 +59,6 @@ int redirection(struct cmd_info *current_command,
 int regular_cmd(char *cmd, char **args);
 void stone_free(char **args, int argument);
 int sls_built_in(void);
-
-
 
 
 int main(void)
@@ -532,13 +530,16 @@ call_pipeline(struct cmd_info *command, int command_no, bool file_err_redirect,
                                                                         command[3].pass_argument);
                                                         if (retval != 0) {
                                                                 call_error(ERR_MISSING_CMD);
-                                                        }       exit(1);
+                                                                exit(1);
+                                                        }
+
                                                 } else
                                                         close(fd);
                                         }
                                 } else
                                         command[3].exit_value = execvp(command[3].pass_argument[0],
                                                                        command[3].pass_argument);
+
 
                         } else {
                                 /* no command, just close the pipe */
@@ -760,7 +761,6 @@ bool construct_cmd(struct cmd_info *command, int cmd_counter, int redirect_count
                                 command[cmd_counter].pass_argument[arg_counter] =
                                         (char*)malloc(strlen(arguments_token[j]) * sizeof(char));
                                 strcpy(command[cmd_counter].pass_argument[arg_counter], arguments_token[j]);
-
                                 arg_counter++;
                         } else {
                                 /* Current token is a file */
@@ -837,4 +837,3 @@ bool error_management(char *cmd)
         }
         return false;
 }
-
