@@ -44,17 +44,17 @@ Allocated memory will be freed either when an error occurs and the program jump 
 
 Here is the basic structure of parsing arguments:
 
-```
+```c
 array_1 = split(); // split from '|', split contains strtok()
 
 for (int i = 0; i < total_command_no; i++) {
-			array_2 = split (array_1[i]) // split from '>'
+	 array_2 = split (array_1[i]) // split from '>'
 			
-			for (j in array_2 ){
-						array_3 = split(array_2[j]) // split from ' '
-						// store information into the command[i]
-			}
-			
+	 for (j in array_2 ){
+		   array_3 = split(array_2[j]) // split from ' '
+			 // store information into the command[i]
+	}
+		
 }
 ```
 
@@ -89,10 +89,10 @@ With that being in mind, I choose to put `execvp()` at the same place with `dup2
 ```c
 int pid = fork();
 if (child) {
-        dup2(fd, stdout); // redirect my output
-        execvp(); 				 // execute the commands
+  dup2(fd, stdout); // redirect my output
+  execvp();   // execute the commands
 } else {
-        waitpid();       // wait for child 
+  waitpid();   // wait for child 
 }
 ```
 
@@ -104,35 +104,35 @@ As stated in the prompt, we have up to 4 commands with three `|`. In the class, 
 pipe(fd_23)    // open pipe between commands 2 and 3
 
 if (fork() != 0){
-				pipe(fd_12);    //open pipe between command 1 and 2
-        if (fork() != 0){  
-							// command 1
-        }else{             
-        			// command 2
-        }
+  pipe(fd_12);    //open pipe between command 1 and 2
+  if (fork() != 0){ // command 1 
+		
+  }else{ // command 2            
+        			
+  }
         
 } else {
-				pipe(fd_34)     // open pipe between commands 3 and 4
-				if (fork() != 0){
-						  // command 3
-						  // if no command, just close the pipe and exit()
-		    }else{
-		   				// command 4
-		    }
+	pipe(fd_34)  // open pipe between commands 3 and 4
+	if (fork() != 0){  // command 3
+						 
+  // if no command, just close the pipe and exit()
+	}else{ // command 4
+		   				
+	}
 
 }
 ```
 
-
+Before piping, I open the pipe between command 2 and 3, thus in command 2 or command 3 process, they can access to this pipe without calling `pipe()`
 
 and I create another fork outside this function
 
 ```c
 int pid = fork();
 if (child) {
-        call_pipe(); // this is where I call the above function
+  call_pipe(); // this is where I call the above function
 } else {
-        sleep(1);
+  sleep(1);
 }
 ```
 
